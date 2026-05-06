@@ -1,6 +1,6 @@
 # Proyecto Final: Predicción de Precios (End-to-End ML con Big Data)
 
-Este repositorio es la plantilla oficial para el proyecto final. 
+Integrantes: Anthony Fajardo, Nicolas Soria, Ryan De La Torre, Juan Pablo Bautista
 
 > [!WARNING]
 > **Arquitectura para Grandes Volúmenes (Big Data):** 
