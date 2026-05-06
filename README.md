@@ -1,112 +1,193 @@
-# Proyecto Final: Predicción de Precios (End-to-End ML con Big Data)
+# Proyecto Final: Predicción de Precios NYC Taxi
 
-Integrantes: Anthony Fajardo, Nicolas Soria, Ryan De La Torre, Juan Pablo Bautista
+Proyecto end-to-end de Machine Learning para predecir el valor total de viajes de taxi de Nueva York usando procesamiento Big Data en Snowflake, experimentación con modelos de ensamble y despliegue mediante FastAPI y Streamlit.
 
-> [!WARNING]
-> **Arquitectura para Grandes Volúmenes (Big Data):** 
-> Procesamiento de **~20GB** de información de viajes. Tratar de descargar toda la data e intentar usar un `train_test_split` tradicional en Pandas o Scikit-Learn saturará su memoria RAM al instante. Por tanto, el corazón de la limpieza estructurada, el ensamble de la OBT y la división Train/Test **se ejecutará del lado de Snowflake mediante SQL**. 
+## Integrantes
 
-El proyecto está segmentado de la siguiente manera para su evaluación:
+- Anthony Fajardo
+- Nicolas Soria
+- Ryan De La Torre
+- Juan Pablo Bautista
 
-*   **PSet #4**: Investigación técnica. Creación del documento técnico (monografía) y exposición sobre el algoritmo de Boosting que se le asignó a su equipo. Algoritmos en paralelo.
-*   **Proyecto Final (PSet #5)**: Implementación, experimentación y despliegue del modelo punto a punto.
+## Resumen del Proyecto
 
----
+El objetivo fue construir una solución completa de predicción de precios para viajes de taxi, evitando cargar localmente el volumen completo de datos. El procesamiento principal se realizó en Snowflake mediante SQL, y Python se usó para exploración con muestras, entrenamiento controlado, evaluación, API y frontend.
 
-## Objetivo General del Proyecto Final
+La solución final incluye:
 
-Deberán conectarse a **Snowflake** para consumir la One Big Table (`analytics.obt_trips`), empujando el cómputo primario a la base de datos (Pushdown Computation), realizar el proceso de de exploración en muestras, estructurar el modelado (*Out-of-Core Training* o por *Lotes*), empaquetarlo en código productivo modular Python y servirlo mediante una API base con FastAPI.
+- Construcción de una One Big Table de modelado en Snowflake.
+- Limpieza estructurada y eliminación de variables con riesgo de data leakage.
+- Splits temporales creados en base de datos.
+- Notebooks de EDA, limpieza, feature engineering y experimentación.
+- Comparación de modelos baseline, bagging, pasting, voting y boosting.
+- Modelo final exportado como artefacto `.pkl`.
+- API REST con FastAPI.
+- Interfaz gráfica con Streamlit consumiendo la API.
+- Pruebas unitarias para validar features, API y modelo exportado.
 
----
+## Arquitectura Big Data
+
+El dataset completo contiene cientos de millones de registros, por lo que el flujo evita descargar toda la información en memoria local. La limpieza principal, la construcción de la OBT y los splits se ejecutan del lado de Snowflake.
+
+Objetos principales en Snowflake:
+
+| Objeto | Periodo | Uso |
+| :--- | :--- | :--- |
+| `ANALYTICS.OBT_TRIPS_MODEL` | 2015-2025 | Tabla final de modelado |
+| `ANALYTICS.TRAIN_SET` | 2015-2023 | Entrenamiento |
+| `ANALYTICS.VAL_SET` | 2024 | Selección de modelo |
+| `ANALYTICS.TEST_SET` | 2025 | Evaluación final |
+
+Volumen validado en los notebooks:
+
+| Objeto | Filas |
+| :--- | ---: |
+| `OBT_TRIPS_MODEL` | 844,000,986 |
+| `TRAIN_SET` | 760,168,027 |
+| `VAL_SET` | 39,723,735 |
+| `TEST_SET` | 44,109,224 |
+
+Para EDA y experimentación se usan consultas agregadas, `SAMPLE BERNOULLI`, `LIMIT` y evaluación por lotes. No se usa `train_test_split` local porque el problema requiere separación temporal.
 
 ## Flujo de Trabajo
 
-### 1. Modelado de Datos
-En la subcarpeta `src/data/sql/` estructurarán la lógica de cruce masivo.
-1. Script para materializar la OBT unificada.
-2. Script para separar los datos (`train_set` 2015-2023, `val_set` 2024, `test_set` 2025).
+### 1. Ingeniería de Datos en Snowflake
 
-### 2. Preparación y Exploración
-No carguen toda la base. Usen directivas SQL como `SAMPLE` o `LIMIT` mientras evalúan.
-1.  **`01_eda.ipynb`**: Realicen Análisis Exploratorio en un **sample**. Identifiquen outliers y Data Leakage.
-2.  **`02_data_cleaning.ipynb`**: Validen reglas lógicas en pandas y **traspasen su código estructural a sus queries SQL** en la DB.
-3.  **`03_feature_engineering.ipynb`**: Creen variables complejas espacio-temporales.
+Los scripts SQL están en `src/data/sql/`:
 
-### 3. Experimentación (Out-of-Core)
-**`04_model_experimentation.ipynb`**: Entrenen modelos. Para ensambles y boostings, investiguen sobre la iteración por lotes (`batch training`, iteradores en XGBoost/LightGBM) o tomen la mayor submuestra representativa que soporte la memoria de sus máquinas. Seleccionen el mejor según RMSE.
+- `01_create_obt.sql`: crea `ANALYTICS.OBT_TRIPS_MODEL`.
+- `02_create_splits.sql`: crea `TRAIN_SET`, `VAL_SET` y `TEST_SET`.
 
-### 4. Refactorización de Produccion
-Migrar el Jupyter a los scripts definitivos en `src/`.
-1.  Copiar la lógica de recolección de *chunks* a `src/data/ingestion.py`.
-2.  Pipeline definitivo en `src/features/`.
-3.  Lógica de `partial_fit` / batch en `src/models/train_model.py`.
+La OBT conserva solo variables disponibles antes o al inicio del viaje. Se excluyeron columnas posteriores al cierre del viaje, como tarifas desagregadas, propinas, duración real, velocidad promedio y tipo de pago.
 
-### 5. API y Front End
-El producto no es un Jupyter, es un software que usará un usuario final interactivo.
-1. **Back-end de ML**: Levantar la aplicación web que envuelve al `.pkl` ejecutando:  
-   `uvicorn src.api.main:app --reload`
-2. **Interfaz de Usuario**: Desarrollar en `app/frontend.py` la interfaz gráfica usando **Streamlit**. El usuario final introducirá datos básicos del viaje y este conectará a la API.  
-   Para correr el servidor web, asegúrese de estar en la raíz de su terminal y ejecutar:
-   `streamlit run app/frontend.py`
+### 2. Notebooks
 
----
+Los notebooks documentan la parte exploratoria y experimental:
 
-## Estado Actual de la Implementacion
+| Notebook | Propósito |
+| :--- | :--- |
+| `01_eda.ipynb` | Análisis exploratorio sobre muestras y agregados de Snowflake |
+| `02_data_cleaning.ipynb` | Validación de reglas de limpieza y chequeo de leakage |
+| `03_feature_engineering.ipynb` | Construcción y validación de variables del modelo |
+| `04_model_experimentation.ipynb` | Comparación de modelos y selección del ganador |
 
-El proyecto ya cuenta con el flujo end-to-end implementado:
+### 3. Modelado
 
-1. La OBT de modelado se materializa en Snowflake como `ANALYTICS.OBT_TRIPS_MODEL`.
-2. Los splits temporales se crean en Snowflake: `ANALYTICS.TRAIN_SET` para 2015-2023, `ANALYTICS.VAL_SET` para 2024 y `ANALYTICS.TEST_SET` para 2025.
-3. Los notebooks `01_eda.ipynb`, `02_data_cleaning.ipynb`, `03_feature_engineering.ipynb` y `04_model_experimentation.ipynb` trabajan con muestras para evitar cargar toda la tabla localmente.
-4. El mejor modelo seleccionado por RMSE de validacion fue `gradient_boosting`.
-5. El modelo productivo fue exportado en `data/processed/price_model.pkl`.
-6. La API FastAPI y el frontend Streamlit consumen ese modelo real.
+Se compararon modelos lineales, ensambles y boostings:
 
-El archivo `data/processed/price_model.pkl` se conserva como artefacto liviano de despliegue para que la API pueda iniciar sin reentrenar. La data cruda y muestras pesadas siguen excluidas del repositorio.
+- Baseline Ridge
+- Random Forest
+- Extra Trees
+- Voting Regressor
+- Bagging
+- Pasting
+- AdaBoost
+- Gradient Boosting
+- XGBoost
+- LightGBM
+- CatBoost
 
-Metricas principales del experimento:
+El modelo seleccionado fue `gradient_boosting`, elegido con `VAL_SET` 2024. El `TEST_SET` 2025 se usó después de seleccionar el ganador.
+
+Métricas principales:
 
 | Split | RMSE | MAE | R2 |
 | :--- | ---: | ---: | ---: |
-| Validacion 2024 | 6.3425 | 3.9071 | 0.9143 |
+| Validación 2024 | 6.3425 | 3.9071 | 0.9143 |
 | Test sample 2025 | 7.9258 | 4.8191 | 0.8503 |
 
-Modelos comparados:
+El modelo productivo se exportó en:
 
-- Baseline Ridge.
-- Random Forest.
-- Extra Trees.
-- Voting Regressor.
-- Bagging.
-- Pasting.
-- AdaBoost.
-- Gradient Boosting.
-- XGBoost.
-- LightGBM.
-- CatBoost.
+```text
+data/processed/price_model.pkl
+```
 
-## Como Ejecutar el Proyecto
+Este artefacto se mantiene en el repositorio para que la API y el frontend puedan ejecutarse sin reentrenar.
 
-Desde la raiz del proyecto:
+## Estructura del Repositorio
+
+```text
+.
+|-- app/
+|   `-- frontend.py
+|-- data/
+|   |-- interim/
+|   |-- processed/
+|   |   `-- price_model.pkl
+|   `-- raw/
+|-- notebooks/
+|   |-- 01_eda.ipynb
+|   |-- 02_data_cleaning.ipynb
+|   |-- 03_feature_engineering.ipynb
+|   `-- 04_model_experimentation.ipynb
+|-- src/
+|   |-- api/
+|   |   `-- main.py
+|   |-- data/
+|   |   |-- ingestion.py
+|   |   |-- run_snowflake_setup.py
+|   |   `-- sql/
+|   |       |-- 01_create_obt.sql
+|   |       `-- 02_create_splits.sql
+|   |-- features/
+|   |   `-- build_features.py
+|   |-- models/
+|   |   |-- predict_model.py
+|   |   `-- train_model.py
+|   `-- utils/
+|       `-- config.py
+|-- tests/
+|-- .env.example
+|-- .gitignore
+|-- README.md
+`-- requirements.txt
+```
+
+## Instalación
+
+Clonar el repositorio:
 
 ```powershell
 git clone https://github.com/tonyfajardo1/proyecto-final.git
 cd proyecto-final
 ```
 
-Validar tablas de Snowflake:
+Crear y activar un entorno virtual:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\activate
+```
+
+Instalar dependencias:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Crear archivo de variables de entorno:
+
+```powershell
+copy .env.example .env
+```
+
+Luego completar `.env` con las credenciales reales de Snowflake.
+
+## Ejecución del Proyecto
+
+Validar y crear objetos en Snowflake:
 
 ```powershell
 python -m src.data.run_snowflake_setup
 ```
 
-Reentrenar y exportar el modelo ganador:
+Reentrenar el modelo ganador:
 
 ```powershell
 python -m src.models.train_model --model gradient_boosting
 ```
 
-Reentrenar y evaluar TEST por lotes desde Snowflake:
+Evaluar el `TEST_SET` por lotes desde Snowflake:
 
 ```powershell
 python -m src.models.train_model --model gradient_boosting --batch-test
@@ -118,33 +199,33 @@ Ejecutar pruebas:
 python -m pytest -q
 ```
 
+Resultado esperado:
+
+```text
+5 passed
+```
+
+## API FastAPI
+
 Levantar la API:
 
 ```powershell
 uvicorn src.api.main:app --reload
 ```
 
-Probar salud de la API:
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
-```
-
-Levantar el frontend:
-
-```powershell
-streamlit run app/frontend.py
-```
-
-URLs locales:
+URLs:
 
 - API: `http://127.0.0.1:8000`
-- Documentacion interactiva: `http://127.0.0.1:8000/docs`
-- Frontend: `http://127.0.0.1:8501`
+- Documentación interactiva: `http://127.0.0.1:8000/docs`
+- Health check: `http://127.0.0.1:8000/health`
 
-Para la demo en `/docs`, usar primero `POST /predict-simple`. Ese endpoint recibe campos de usuario final como fecha, hora, distancia, pasajeros, boroughs y location IDs. El endpoint `POST /predict` queda disponible como contrato tecnico completo del modelo.
+Endpoint recomendado para la demo:
 
-Ejemplo para `POST /predict-simple`:
+```text
+POST /predict-simple
+```
+
+Ejemplo de entrada:
 
 ```json
 {
@@ -163,42 +244,47 @@ Ejemplo para `POST /predict-simple`:
 }
 ```
 
-## Orden Recomendado para la Demo
+El endpoint `/predict-simple` recibe campos cercanos a lo que ingresaría un usuario final. El endpoint `/predict` queda disponible como contrato técnico completo del modelo.
 
-1. Mostrar que Snowflake contiene la OBT y los splits temporales.
-2. Abrir los notebooks y explicar que trabajan con muestras, no con toda la tabla en memoria.
-3. Mostrar la comparacion de modelos en `04_model_experimentation.ipynb`.
-4. Explicar por que `gradient_boosting` fue elegido con `VAL_SET`.
-5. Mostrar que `TEST_SET` se usa despues de escoger el ganador.
-6. Ejecutar `python -m pytest -q`.
-7. Abrir `http://127.0.0.1:8000/docs` y probar `/predict-simple`.
-8. Abrir `http://127.0.0.1:8501` y hacer una prediccion desde la interfaz.
+## Frontend Streamlit
 
----
+Levantar la interfaz:
 
-## Estructura
-
-```text
-├── data/               # Archivos prohibidos en Git (.gitignore) y modelos (.pkl)
-├── notebooks/          # Exploración interactivo (usar MUESTRAS)
-│   ├── 01_eda.ipynb
-│   ├── 02_data_cleaning.ipynb
-│   ├── 03_feature_engineering.ipynb
-│   └── 04_model_experimentation.ipynb
-├── src/                # Código fuente de Producción
-│   ├── data/           
-│   │   ├── sql/        # Scripts SQL obligatorios para la DB (Pushdown)
-│   │   └── ingestion.py # Iterador de descargas
-│   ├── features/       # Transformadores sklearn
-│   ├── models/         # Entrenamiento modular y por batch
-│   ├── api/            # API del modelo (FastAPI)
-│   └── utils/          
-├── app/                # Carpeta para el Frontend final
-│   └── frontend.py     # Aplicación interactiva en Streamlit
-├── tests/              # Pruebas unitarias
-├── .env.example        
-├── requirements.txt    
-└── README.md           
+```powershell
+streamlit run app/frontend.py
 ```
 
----
+URL local:
+
+```text
+http://127.0.0.1:8501
+```
+
+La interfaz permite ingresar datos básicos del viaje y consultar la API para obtener la tarifa estimada.
+
+## Control de Data Leakage
+
+El proyecto controla el leakage en tres niveles:
+
+- La OBT excluye variables conocidas después del viaje, como `FARE_AMOUNT`, `TIP_AMOUNT`, `TOLLS_AMOUNT`, `PAYMENT_TYPE`, `TRIP_DURATION_MIN` y `AVG_SPEED_MPH`.
+- Los splits se hacen por tiempo en Snowflake, no con partición aleatoria local.
+- El `TEST_SET` 2025 se reserva para evaluación posterior a la selección del modelo ganador.
+
+## Orden Sugerido para la Demo
+
+1. Mostrar los scripts SQL de la OBT y los splits temporales.
+2. Abrir los notebooks y explicar que usan muestras, no la tabla completa.
+3. Mostrar el resumen de filas de Snowflake.
+4. Mostrar la comparación de modelos en `04_model_experimentation.ipynb`.
+5. Explicar la selección de `gradient_boosting` con validación 2024.
+6. Ejecutar `python -m pytest -q`.
+7. Probar `/predict-simple` en `http://127.0.0.1:8000/docs`.
+8. Probar una predicción desde Streamlit.
+
+## Notas de Reproducibilidad
+
+- `.env` no se versiona porque contiene credenciales.
+- `.env.example` documenta las variables necesarias.
+- Los datos crudos e intermedios no se suben al repositorio.
+- El modelo final `price_model.pkl` se conserva como artefacto liviano de despliegue.
+- La ejecución completa depende de tener acceso válido a Snowflake y a las tablas fuente del proyecto.
