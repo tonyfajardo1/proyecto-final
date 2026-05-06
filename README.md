@@ -90,7 +90,8 @@ Modelos comparados:
 Desde la raiz del proyecto:
 
 ```powershell
-cd "F:\Data mining\Proyecto Final"
+git clone https://github.com/tonyfajardo1/proyecto-final.git
+cd proyecto-final
 ```
 
 Validar tablas de Snowflake:
