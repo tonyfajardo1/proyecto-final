@@ -27,7 +27,7 @@ La solución final incluye:
 
 ## Vista de la Aplicación
 
-![Dashboard Streamlit](.streamlit/dashboard_streamlit.png)
+![Dashboard Streamlit](docs/dashboard_streamlit.png)
 
 ## Arquitectura Big Data
 
